@@ -1,0 +1,12 @@
+__pycache__
+*.pyc
+poetry.lock
+.pre-commit-config.yaml
+.github
+docs
+.vscode
+.venv
+.git
+.pytest_cache
+tests
+mkdocs.yml
