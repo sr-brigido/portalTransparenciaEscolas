@@ -7,15 +7,18 @@ license = "MIT"
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.12"
-taskipy = "^1.12.2"
+python = "3.12.2"
+taskipy = "1.12.2"
+streamlit = "1.32.2"
+pandas = "2.2.1"
+python-dotenv = "^1.0.1"
 
 [tool.poetry.group.dev.dependencies]
-pre-commit = "^3.5.0"
-commitizen = "^3.13.0"
+pre-commit = "3.5.0"
+commitizen = "3.13.0"
 
 [tool.poetry.group.tests.dependencies]
-pytest = "^7.4.3"
+pytest = "7.4.3"
 
 [tool.poetry.group.docs.dependencies]
 mkdocstrings-python = "^1.7.5"
@@ -33,6 +36,7 @@ git-config = "pre-commit install && pre-commit install --hook-type commit-msg"
 pre-commit = "git add . && pre-commit run"
 commit = "git add . && cz commit"
 test = "pytest -v"
+run = "streamlit run src/app.py"
 
 [tool.bandit]
 exclude_dirs = ["tests"]

@@ -1,0 +1,6 @@
+[theme]
+base="dark"
+primaryColor="E84E10"
+
+[server]
+port = 8555
