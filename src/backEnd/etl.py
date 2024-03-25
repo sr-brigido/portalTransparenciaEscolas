@@ -149,3 +149,10 @@ class DriveProcessor:
         dictDataframe = {"QUANTIDADE POR ANO": alunosUnpivotFiltrado}
 
         return [dictDadosEscolaFiltrada, dictDataframe]
+
+    def listaEscolas(self):
+        """Retorna uma lista de opções de escolas."""
+        dadosEscolas = self.importaPlanilhaPorAba(
+            os.getenv("ID_PLANILHA"), "Dados das Escolas"
+        )
+        return list(dadosEscolas["ESCOLA"].unique())
