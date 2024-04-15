@@ -1,6 +1,5 @@
 """Este módulo contém a classe da interface gráfica do projeto."""
 
-from pathlib import Path
 from typing import List
 
 import streamlit as st
@@ -12,7 +11,6 @@ class UiPortalescolas:
     def __init__(self) -> None:
         """Abre UI do projeto."""
         self.configPagina()
-        self.ajusteEstilo(Path("src/frontEnd/styles/styles.css"))
 
     def configPagina(self):
         """Define configurações de layout da página."""
@@ -22,18 +20,11 @@ class UiPortalescolas:
             layout="wide",
         )
 
-    def ajusteEstilo(self, pathCss):
-        """Funcão que altera agumas características da ui do projeto."""
-        with open(pathCss) as arquivo:
-            st.markdown(
-                f"<style>{arquivo.read()}</style>", unsafe_allow_html=True
-            )  # noqa E501
-
     def tituloPagina(self):
         """Exibe o título da aplicação."""
         return st.title(
             "Portal de transparência das escolas \
-                do município de Criciúma.",
+                municipais de Criciúma",
             False,
         )
 
@@ -49,16 +40,17 @@ class UiPortalescolas:
         """
         return st.selectbox(titulo, listaOpcoes)
 
-    def topicoWeb(self, textoTopico: str):
+    def topicoWeb(self, textoTopico: str, ancoragem: bool | None = None):
         """Exibe um título que pode conter uma ancoragem.
 
         Args:
             textoTopico: O texto que será exibido em tela
+            ancoragem: Define se o texto será um ponto de ancoragem para links
 
         Returns:
             topicoStreamlit: Um texto que pode ser selecionado pelo usuário
         """
-        return st.header(textoTopico)
+        return st.header(textoTopico, anchor=ancoragem)
 
     def markdown(self, textoMd: str):
         """Exibe a formatação em Markdown para o texto inserido.
@@ -70,3 +62,18 @@ class UiPortalescolas:
             textoFormatado: Texto em formatação Markdown
         """
         return st.markdown(textoMd)
+
+    def textoComfonteVariavel(self, texto: str, tamanho: int = 20):
+        """Exibe texto com tamanho variável.
+
+        Args:
+            texto: Texto que será exibido
+            tamanho: Tamanho desejado em pixels
+
+        Returns:
+            textoAlterado: Texto com o tamanho desejado
+        """
+        return st.markdown(
+            '<span style="font-size: ' + str(tamanho) + f'px;">{texto}</span>',
+            unsafe_allow_html=True,
+        )

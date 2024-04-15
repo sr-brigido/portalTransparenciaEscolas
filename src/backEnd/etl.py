@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Dict, Union
 
 import gspread
 import pandas as pd
@@ -30,7 +30,7 @@ class DriveProcessor:
             conteúdos do mesmo
         """
         self.caminhoCredenciaisGoogle = caminhoCredenciais
-        self.instanciaGoogle = gspread.service_account(
+        self._instanciaGoogle = gspread.service_account(
             filename=self.caminhoCredenciaisGoogle
         )
 
@@ -48,7 +48,7 @@ class DriveProcessor:
         Returns:
             dadosPLanilha: Dataframe com os dados da planilha
         """
-        planilha = self.instanciaGoogle.open_by_key(idPLanilha)
+        planilha = self._instanciaGoogle.open_by_key(idPLanilha)
         aba = planilha.worksheet(nomeAbaPlanilha)
         dados = aba.get_all_values()
         colunasCorrigidas = [
@@ -57,7 +57,7 @@ class DriveProcessor:
 
         return pd.DataFrame(dados[1:], columns=colunasCorrigidas)
 
-    def dadosEscola(self, nomeEscola: str) -> List[Dict]:
+    def dadosEscola(self, nomeEscola: str) -> Dict:
         """Retorna uma lista de dicionários \
             com as infromações da escola filtrada.
 
@@ -96,9 +96,12 @@ class DriveProcessor:
                 ]
             return ", ".join(observacoes) if observacoes else None
 
+        # Adicionando coluna com a observacao do atendimento
         dadosEscolaFiltrada["OBS. ATENDIMENTO"] = dadosEscolaFiltrada.apply(
             extrairObservacoes, axis=1
         )
+
+        # Ajustando coluna de atendimento
         dadosEscolaFiltrada["ATENDIMENTO"] = (
             dadosEscolaFiltrada["ATENDIMENTO"]
             .str.split("*")
@@ -146,9 +149,12 @@ class DriveProcessor:
             alunosEscolasFiltrado.iloc[0]["ESTUDANTES COM DEFICIÊNCIA"]
         )
 
-        dictDataframe = {"QUANTIDADE POR ANO": alunosUnpivotFiltrado}
+        # Captura Dataframe de alunos por turma e coloca em um dicionário
+        dictQuantidadeAlunosPorTurma = {
+            "QUANTIDADE POR ANO": alunosUnpivotFiltrado
+        }  # noqa E501
 
-        return [dictDadosEscolaFiltrada, dictDataframe]
+        return [dictDadosEscolaFiltrada, dictQuantidadeAlunosPorTurma]
 
     def listaEscolas(self):
         """Retorna uma lista de opções de escolas."""
