@@ -15,7 +15,9 @@ from frontEnd.ui import UiPortalescolas
 load_dotenv(".env")
 
 interface = UiPortalescolas()
-dados = DriveProcessor(Path(os.getenv("PATH_GOOGLE_CREDENTIALS")))
+dados = DriveProcessor(
+    Path(os.getenv("PATH_GOOGLE_CREDENTIALS")), os.getenv("REDIS_URL")
+)
 
 
 @cache_data(ttl=3600)
@@ -54,12 +56,13 @@ def app():
         "OBS. ATENDIMENTO",
         "INEP",
     ]
+
     infoGerais, quantidadePorAno = escolaSelecionada
 
     for i in dadosExibicaoCartoes:
         if infoGerais[i]:
             interface.textoComfonteVariavel(
-                f"**{i}:** " + infoGerais.pop(i), tamanho=30
+                f"**{i}:** " + str(infoGerais.pop(i)), tamanho=30
             )
 
     divider()

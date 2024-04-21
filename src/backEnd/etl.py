@@ -1,12 +1,16 @@
-"""Este módulo contém a classe de tratamento dados para o portal."""
+"""Este módulo contém a classe de armazenamento \
+    e tratamento de dados para o portal."""
 
+import json
 import os
 from pathlib import Path
-from typing import Dict, Union
+from typing import Any, Dict, List, Union
 
 import gspread
 import pandas as pd
+import redis
 from dotenv import load_dotenv
+from numpy import nan
 
 # Importa as variáveis de ambiente
 load_dotenv(".env")
@@ -16,27 +20,62 @@ class DriveProcessor:
     """Essa classe contém métodos de extracao \
         e tratamento de dados do projeto."""
 
-    def __init__(self, caminhoCredenciais: Path) -> None:
+    def __init__(self, caminhoCredenciais: Path, redisUrl: str) -> None:
         """Instancia o ponto de entrada do projeto.
 
         Args:
             caminhoCredenciais: O caminho para o arquivo \
             json que possui suas credenciais de acesso \
             pela conta de serviço do Google
+            redisUrl: URL do banco redis para cacheamento
 
         Returns:
             conexaoGoogleDrive: Uma instância de conexão \
             com o Google drive, podendo importar \
             conteúdos do mesmo
         """
-        self.caminhoCredenciaisGoogle = caminhoCredenciais
+        self.redisUrl = redisUrl
+        self.ttl = int(os.getenv("TTL"))
         self._instanciaGoogle = gspread.service_account(
-            filename=self.caminhoCredenciaisGoogle
-        )
+            filename=caminhoCredenciais
+        )  # noqa E501
+
+    def redisDump(self, key: str, data: List[Dict[str, Any]]) -> None:
+        """Armazena um dado em Cache.
+
+        Args:
+            key: Chave do item a ser inserido
+            data: Valor do item a ser inserido
+
+        Returns:
+            None: Insere o dado em cache do Redis
+        """
+        with redis.from_url(self.redisUrl) as client:
+            client.setex(name=key, value=json.dumps(data), time=self.ttl)
+            client.set
+
+        pass
+
+    def redisRetrieve(self, key: str) -> Dict | None:
+        """Retorna um valor armazenado no Redis.
+
+        Args:
+            key: Chave do valor procurado
+
+        Returns:
+            valor: O valor da chave correspondente
+        """
+        with redis.from_url(self.redisUrl) as client:
+            info = client.get(name=key)
+
+        if info is None:
+            return None
+
+        return json.loads(info)
 
     def importaPlanilhaPorAba(
         self, idPLanilha: str, nomeAbaPlanilha: str
-    ) -> pd.DataFrame:
+    ) -> json:  # noqa E501
         """Retorna um Dataframe com o conteúdo de uma \
             planilha Google sheets compartilhada \
             no Google drive.
@@ -46,16 +85,26 @@ class DriveProcessor:
             nomeAbaPlanilha: Nome da aba desejada da planilha
 
         Returns:
-            dadosPLanilha: Dataframe com os dados da planilha
+            dadosPLanilha: dados da planilha importada
         """
-        planilha = self._instanciaGoogle.open_by_key(idPLanilha)
-        aba = planilha.worksheet(nomeAbaPlanilha)
-        dados = aba.get_all_values()
-        colunasCorrigidas = [
-            str(coluna).replace("\n", " ") for coluna in dados[0]
-        ]  # noqa E501
+        dados = self.redisRetrieve(nomeAbaPlanilha)
+        if not dados:
+            planilha = self._instanciaGoogle.open_by_key(idPLanilha)
+            aba = planilha.worksheet(nomeAbaPlanilha)
 
-        return pd.DataFrame(dados[1:], columns=colunasCorrigidas)
+            dados = aba.get_all_records()
+            colunasCorrigidas = [
+                {
+                    chave.replace("\n", " "): valor
+                    for chave, valor in linha.items()  # noqa E501
+                }  # noqa E501
+                for linha in dados
+            ]
+
+            self.redisDump(key=nomeAbaPlanilha, data=colunasCorrigidas)
+            return colunasCorrigidas
+
+        return dados
 
     def dadosEscola(self, nomeEscola: str) -> Dict:
         """Retorna uma lista de dicionários \
@@ -71,21 +120,18 @@ class DriveProcessor:
         dadosEscolas = self.importaPlanilhaPorAba(
             os.getenv("ID_PLANILHA"), "Dados das Escolas"
         )
-        dadosEscolaFiltrada = dadosEscolas[
-            dadosEscolas["ESCOLA"] == nomeEscola
-        ].copy()  # noqa E501
+
+        dfEscolas = pd.DataFrame(dadosEscolas)
 
         # tratamento basico da planilha
         # Ajuste Endereço
-        dadosEscolaFiltrada["ENDEREÇO"] = dadosEscolaFiltrada[
-            "ENDEREÇO"
-        ].str.replace(  # noqa E501
+        dfEscolas["ENDEREÇO"] = dfEscolas["ENDEREÇO"].str.replace(  # noqa E501
             "\n", ", "
         )  # noqa E502
 
         # remocao de quebra de linha no DF Inteiro
-        dadosEscolaFiltrada.replace(" \n", " ", regex=True, inplace=True)
-        dadosEscolaFiltrada.replace("\n", "", regex=True, inplace=True)
+        dfEscolas.replace(" \n", " ", regex=True, inplace=True)
+        dfEscolas.replace("\n", "", regex=True, inplace=True)
 
         # Criando coluna de obervacoes do atendimento e atualizando df
         def extrairObservacoes(linha: pd.Series) -> Union[str, None]:
@@ -97,17 +143,18 @@ class DriveProcessor:
             return ", ".join(observacoes) if observacoes else None
 
         # Adicionando coluna com a observacao do atendimento
-        dadosEscolaFiltrada["OBS. ATENDIMENTO"] = dadosEscolaFiltrada.apply(
+        dfEscolas["OBS. ATENDIMENTO"] = dfEscolas.apply(
             extrairObservacoes, axis=1
-        )
+        )  # noqa E501
 
         # Ajustando coluna de atendimento
-        dadosEscolaFiltrada["ATENDIMENTO"] = (
-            dadosEscolaFiltrada["ATENDIMENTO"]
-            .str.split("*")
-            .str[0]
-            .str.strip()  # noqa E501
+        dfEscolas["ATENDIMENTO"] = (
+            dfEscolas["ATENDIMENTO"].str.split("*").str[0].str.strip()  # noqa E501
         )
+
+        dadosEscolaFiltrada = dfEscolas[
+            dfEscolas["ESCOLA"] == nomeEscola
+        ].copy()  # noqa E501
 
         # Estabelecendo dados padrões da escola
         dictDadosEscolaFiltrada = dadosEscolaFiltrada.iloc[0].to_dict()
@@ -116,8 +163,11 @@ class DriveProcessor:
         alunosEscolas = self.importaPlanilhaPorAba(
             os.getenv("ID_PLANILHA"), "Quantidade de Alunos por Escola"
         )
-        alunosEscolasFiltrado = alunosEscolas[
-            alunosEscolas["ESCOLA"] == nomeEscola
+
+        dfAlunosEscolas = pd.DataFrame(alunosEscolas)
+
+        alunosEscolasFiltrado = dfAlunosEscolas[
+            dfAlunosEscolas["ESCOLA"] == nomeEscola
         ].copy()
 
         # Removendo coluna de total
@@ -156,9 +206,153 @@ class DriveProcessor:
 
         return [dictDadosEscolaFiltrada, dictQuantidadeAlunosPorTurma]
 
-    def listaEscolas(self):
+    def listaEscolas(self) -> List:
         """Retorna uma lista de opções de escolas."""
         dadosEscolas = self.importaPlanilhaPorAba(
             os.getenv("ID_PLANILHA"), "Dados das Escolas"
         )
-        return list(dadosEscolas["ESCOLA"].unique())
+        return [chave["ESCOLA"] for chave in dadosEscolas]
+
+    def retornaPlanilhaIdebMacro(self, anoIdeb: int) -> pd.DataFrame:
+        """Retorna as metas e valores \
+            do IDEB Geral (Brasil, Santa Catarina, Criciuma).
+
+        Args:
+            anoIdeb: Ano da classe que prestou a avaliação
+
+        Returns:
+            dadosIdeb: Um Dataframe que \
+                contém as notas realizadas e as metas previstas
+        """
+        # Ajuste tecnico
+        if anoIdeb == 5:
+            nomePlanilhaNotas = f"IDEB {anoIdeb}° ANO"
+            nomePlanilhaMetas = f"META IDEB {anoIdeb}º ANO"
+        else:
+            nomePlanilhaNotas = f"IDEB {anoIdeb}° ANO"
+            nomePlanilhaMetas = f"META IDEB {anoIdeb}° ANO"
+
+        idPlanilha = os.getenv("ID_PLANILHA")
+
+        # Importacao
+        planilhaNotasGeral = self.importaPlanilhaPorAba(
+            idPlanilha, nomePlanilhaNotas
+        ).head(3)
+        planilhaNotasMetas = self.importaPlanilhaPorAba(
+            idPlanilha, nomePlanilhaMetas
+        ).head(3)
+
+        # Unpivot
+        unpivotNotasGeral = pd.melt(
+            planilhaNotasGeral,
+            id_vars=planilhaNotasGeral.columns[0],
+            var_name="ANO",
+            value_name="NOTA",
+        )
+        unpivotNotasMetas = pd.melt(
+            planilhaNotasMetas,
+            id_vars=planilhaNotasMetas.columns[0],
+            var_name="ANO",
+            value_name="META",
+        )
+
+        # Merge Tabelas
+        df = pd.merge(
+            unpivotNotasGeral,
+            unpivotNotasMetas,
+            on=["ESCOLA", "ANO"],
+            how="left",  # noqa E501
+        )
+
+        # Corrigindo tipo de dados
+        df["NOTA"] = df["NOTA"].str.replace(",", ".").astype(float)
+        df["META"] = df["META"].str.replace(",", ".").astype(float)
+
+        # Substituir Valores Nulos restantes
+        df.fillna(0, inplace=True)
+
+        df["ATINGIMENTO"] = df.apply(
+            lambda linha: (linha["NOTA"] / linha["META"])
+            if linha["META"] != 0
+            else 0,  # noqa E501
+            axis=1,
+        )
+
+        return df
+
+    def retornaPlanilhaIdebMicro(self, anoIdeb: int) -> pd.DataFrame:
+        """Retorna as metas e valores \
+            do IDEB das escolas de Criciúma.
+
+        Args:
+            anoIdeb: Ano da classe que prestou a avaliação
+
+        Returns:
+            dadosIdeb: Um Dataframe que \
+                contém as notas realizadas e as metas previstas
+        """
+        # Ajuste tecnico
+        if anoIdeb == 5:
+            nomePlanilhaNotas = f"IDEB {anoIdeb}° ANO"
+            nomePlanilhaMetas = f"META IDEB {anoIdeb}º ANO"
+        else:
+            nomePlanilhaNotas = f"IDEB {anoIdeb}° ANO"
+            nomePlanilhaMetas = f"META IDEB {anoIdeb}° ANO"
+
+        idPlanilha = os.getenv("ID_PLANILHA")
+
+        # Importacao
+        planilhaNotasGeral = self.importaPlanilhaPorAba(
+            idPlanilha, nomePlanilhaNotas
+        ).iloc[3:]
+        planilhaNotasMetas = self.importaPlanilhaPorAba(
+            idPlanilha, nomePlanilhaMetas
+        ).iloc[3:]
+
+        # Unpivot
+        unpivotNotasGeral = pd.melt(
+            planilhaNotasGeral,
+            id_vars=planilhaNotasGeral.columns[0],
+            var_name="ANO",
+            value_name="NOTA",
+        )
+        unpivotNotasMetas = pd.melt(
+            planilhaNotasMetas,
+            id_vars=planilhaNotasMetas.columns[0],
+            var_name="ANO",
+            value_name="META",
+        )
+
+        # Merge Tabelas
+        df = pd.merge(
+            unpivotNotasGeral,
+            unpivotNotasMetas,
+            on=["ESCOLA", "ANO"],
+            how="left",  # noqa E501
+        )
+
+        # Ajustes colunas
+        df["NOTA"] = df["NOTA"].replace(["-", "*", "**"], nan)
+        df["META"] = df["META"].replace(["-", ""], nan)
+
+        # Corrigindo tipo de dados
+        df["NOTA"] = df["NOTA"].str.replace(",", ".").astype(float)
+        df["META"] = df["META"].str.replace(",", ".").astype(float)
+
+        # Filtro de dados Nulos e
+        df.dropna(subset=["NOTA", "META"], inplace=True, how="all")
+
+        # Substituir Valores Nulos restantes
+        df.fillna(0, inplace=True)
+
+        # Ajuste de indice
+        df.reset_index(inplace=True, drop=True)
+
+        df["ATINGIMENTO"] = df.apply(
+            lambda linha: (linha["NOTA"] / linha["META"])
+            if linha["META"] != 0
+            else 0,  # noqa E501
+            axis=1,
+        )
+
+        return df
