@@ -34,7 +34,7 @@ class DriveProcessor:
             com o Google drive, podendo importar \
             conteúdos do mesmo
         """
-        self.redisUrl = redisUrl
+        self._redisUrl = redisUrl
         self.ttl = int(os.getenv("TTL"))
         self._instanciaGoogle = gspread.service_account(
             filename=caminhoCredenciais
@@ -50,7 +50,7 @@ class DriveProcessor:
         Returns:
             None: Insere o dado em cache do Redis
         """
-        with redis.from_url(self.redisUrl) as client:
+        with redis.from_url(self._redisUrl) as client:
             client.setex(name=key, value=json.dumps(data), time=self.ttl)
             client.set
 
@@ -65,7 +65,7 @@ class DriveProcessor:
         Returns:
             valor: O valor da chave correspondente
         """
-        with redis.from_url(self.redisUrl) as client:
+        with redis.from_url(self._redisUrl) as client:
             info = client.get(name=key)
 
         if info is None:
@@ -264,15 +264,10 @@ class DriveProcessor:
             ]
         )  # noqa E501
 
-        # Adicionar sequencia
-        dadosCorrigidosNotas["ID ESCOLA"] = range(
-            1, len(dadosCorrigidosNotas) + 1
-        )  # noqa E501
-
         # Unpivot
         unpivotNotasGeral = pd.melt(
             dadosCorrigidosNotas,
-            id_vars=["ESCOLA", "ID ESCOLA"],
+            id_vars=["ESCOLA"],
             var_name="ANO",
             value_name="NOTA",
         )
@@ -327,21 +322,44 @@ class DriveProcessor:
         # Importacao
         planilhaNotasGeral = self.importaPlanilhaPorAba(
             idPlanilha, nomePlanilhaNotas
-        ).iloc[3:]
+        )[  # noqa E501
+            3:
+        ]
         planilhaNotasMetas = self.importaPlanilhaPorAba(
             idPlanilha, nomePlanilhaMetas
-        ).iloc[3:]
+        )[  # noqa E501
+            3:
+        ]
+
+        dadosCorrigidosNotas = pd.DataFrame(
+            [
+                {
+                    chave: (valor / 10) if isinstance(valor, int) else valor
+                    for chave, valor in escola.items()
+                }
+                for escola in planilhaNotasGeral
+            ]
+        )  # noqa E501
+        dadosCorrigidosMetas = pd.DataFrame(
+            [
+                {
+                    chave: (valor / 10) if isinstance(valor, int) else valor
+                    for chave, valor in escola.items()
+                }
+                for escola in planilhaNotasMetas
+            ]
+        )  # noqa E501
 
         # Unpivot
         unpivotNotasGeral = pd.melt(
-            planilhaNotasGeral,
-            id_vars=planilhaNotasGeral.columns[0],
+            dadosCorrigidosNotas,
+            id_vars=["ESCOLA"],
             var_name="ANO",
             value_name="NOTA",
         )
         unpivotNotasMetas = pd.melt(
-            planilhaNotasMetas,
-            id_vars=planilhaNotasMetas.columns[0],
+            dadosCorrigidosMetas,
+            id_vars=["ESCOLA"],
             var_name="ANO",
             value_name="META",
         )
@@ -358,11 +376,7 @@ class DriveProcessor:
         df["NOTA"] = df["NOTA"].replace(["-", "*", "**"], nan)
         df["META"] = df["META"].replace(["-", ""], nan)
 
-        # Corrigindo tipo de dados
-        df["NOTA"] = df["NOTA"].str.replace(",", ".").astype(float)
-        df["META"] = df["META"].str.replace(",", ".").astype(float)
-
-        # Filtro de dados Nulos e
+        # Filtro de dados Nulos
         df.dropna(subset=["NOTA", "META"], inplace=True, how="all")
 
         # Substituir Valores Nulos restantes
@@ -377,5 +391,10 @@ class DriveProcessor:
             else 0,  # noqa E501
             axis=1,
         )
+
+        df["ATINGIU META"] = [
+            "NÃO" if atingimento < 1 else "SIM"
+            for atingimento in df["ATINGIMENTO"]  # noqa E501
+        ]
 
         return df
