@@ -40,6 +40,23 @@ class UiPortalescolas:
         """
         return st.selectbox(titulo, listaOpcoes)
 
+    def multiSeletor(
+        self, titulo: str, listaOpcoes: List[str], padrao: List[str] = None
+    ):
+        """Exibe uma lista de opção múltipla para seleção.
+
+        Args:
+            titulo: o contexto da checkbox
+            listaOpcoes: Uma lista dos itens que se pode filtrar
+            padrao: Lista padrão ao abrir o site
+
+        Returns:
+            checkBoxStreamlit: Uma caixa de seleção das opções
+        """
+        return st.multiselect(
+            label=titulo, options=listaOpcoes, default=padrao
+        )  # noqa E501
+
     def topicoWeb(self, textoTopico: str, ancoragem: bool | None = None):
         """Exibe um título que pode conter uma ancoragem.
 
@@ -77,3 +94,14 @@ class UiPortalescolas:
             '<span style="font-size: ' + str(tamanho) + f'px;">{texto}</span>',
             unsafe_allow_html=True,
         )
+
+    def apontarErro(self, erro: str):
+        """Retorna uma flag de Erro no sistema.
+
+        Args:
+            erro: A mensagem de erro que se deseja exibir
+
+        Returns:
+            erro: Exibe em tela o erro disparado
+        """
+        return st.error(erro)

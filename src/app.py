@@ -3,11 +3,12 @@ as classes dependentes do front e back do portal."""
 
 import os
 from pathlib import Path
+from typing import List
 
 import pandas as pd
 import plotly_express as px
 from dotenv import load_dotenv
-from streamlit import cache_data, dataframe, divider, plotly_chart
+from streamlit import columns, dataframe, divider, plotly_chart
 
 from backEnd.etl import DriveProcessor
 from frontEnd.ui import UiPortalescolas
@@ -18,12 +19,6 @@ interface = UiPortalescolas()
 dados = DriveProcessor(
     Path(os.getenv("PATH_GOOGLE_CREDENTIALS")), os.getenv("REDIS_URL")
 )
-
-
-@cache_data(ttl=3600)
-def listaEscolas():
-    """Carrega a lista de escolas em cache do navegador."""
-    return dados.listaEscolas()
 
 
 def app():
@@ -43,7 +38,7 @@ def app():
 
     divider()
     interface.markdown("## Dados gerais das escolas")
-    escola = interface.seletor("Selecione a escola", listaEscolas())
+    escola = interface.seletor("Selecione a escola", dados.listaEscolas())
 
     # Importa dados da escola selecionada
     escolaSelecionada = dados.dadosEscola(escola)
@@ -88,6 +83,68 @@ def app():
     plotly_chart(graficoEscolas, use_container_width=True)
 
     interface.markdown("## Desempenho IDEB 5° ano")
+
+    # Importa o Dataframe
+    dfIdeb5 = dados.retornaPlanilhaIdebMacro(5)
+    opcoesSelecaoPolo = dfIdeb5["ESCOLA"].unique()
+    opcoesSelecaoAno = dfIdeb5["ANO"].unique()
+
+    def filtraAnoDF(df: pd.DataFrame, ano: str) -> pd.DataFrame:
+        """Filtra o Dataframe para o Ano selecionado.
+
+        Args:
+            df: Dataframe para filtrar
+            ano: Ano desejado
+
+        Returns
+            dfFiltrado: O Dataframe filtrado pelo ano de input
+        """
+        return df[df["ANO"] == ano]
+
+    def selecionaColunasDF(
+        df: pd.DataFrame, colunas: List[str]
+    ) -> pd.DataFrame:  # noqa E501
+        """Retorna o Dataframe com as colunas selecionadas.
+
+        Args:
+            df: Dataframe para filtrar
+            colunas: Lista de colunas desejadas
+
+        Returns
+            df: O Dataframe com as colunas de input
+        """
+        return df[df["ESCOLA"].isin(colunas)]
+
+    col1, col2 = columns([1, 7])
+    anoSelecionado = col1.selectbox(
+        label="Selecione o ano de análise:",
+        options=opcoesSelecaoAno,
+        index=len(opcoesSelecaoAno) - 1,
+    )
+    nivelSelecionado = col1.multiselect(
+        label="Selecione os polos para comparação:",
+        options=opcoesSelecaoPolo,
+        default=opcoesSelecaoPolo,
+    )
+
+    dfGeralFiltrado = selecionaColunasDF(
+        filtraAnoDF(dfIdeb5, anoSelecionado), nivelSelecionado
+    )
+
+    if not dfGeralFiltrado.empty:
+        graficoGeralIdeb = px.bar(
+            dfGeralFiltrado,
+            x="ESCOLA",
+            y=["NOTA", "META"],
+            barmode="group",
+            title=f"Média nota IDEB Geral em {anoSelecionado}",
+        )
+
+        col2.plotly_chart(graficoGeralIdeb, use_container_width=True)
+
+    else:
+        col2.error("Selecione ao menos 1 polo para exibir o gráfico!")
+
     interface.markdown("## Desempenho IDEB 9° ano")
 
 
