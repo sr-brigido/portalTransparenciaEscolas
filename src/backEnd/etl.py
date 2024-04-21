@@ -75,8 +75,8 @@ class DriveProcessor:
 
     def importaPlanilhaPorAba(
         self, idPLanilha: str, nomeAbaPlanilha: str
-    ) -> json:  # noqa E501
-        """Retorna um Dataframe com o conteúdo de uma \
+    ) -> List[Dict[str, Any]]:  # noqa E501
+        """Retorna um Objeto com o conteúdo de uma \
             planilha Google sheets compartilhada \
             no Google drive.
 
@@ -106,7 +106,7 @@ class DriveProcessor:
 
         return dados
 
-    def dadosEscola(self, nomeEscola: str) -> Dict:
+    def dadosEscola(self, nomeEscola: str) -> List[Dict[Any, Any]]:
         """Retorna uma lista de dicionários \
             com as infromações da escola filtrada.
 
@@ -237,21 +237,48 @@ class DriveProcessor:
         # Importacao
         planilhaNotasGeral = self.importaPlanilhaPorAba(
             idPlanilha, nomePlanilhaNotas
-        ).head(3)
+        )[  # noqa E501
+            :3
+        ]
         planilhaNotasMetas = self.importaPlanilhaPorAba(
             idPlanilha, nomePlanilhaMetas
-        ).head(3)
+        )[  # noqa E501
+            :3
+        ]
+        dadosCorrigidosNotas = pd.DataFrame(
+            [
+                {
+                    chave: (valor / 10) if isinstance(valor, int) else valor
+                    for chave, valor in escola.items()
+                }
+                for escola in planilhaNotasGeral
+            ]
+        )  # noqa E501
+        dadosCorrigidosMetas = pd.DataFrame(
+            [
+                {
+                    chave: (valor / 10) if isinstance(valor, int) else valor
+                    for chave, valor in escola.items()
+                }
+                for escola in planilhaNotasMetas
+            ]
+        )  # noqa E501
+
+        # Adicionar sequencia
+        dadosCorrigidosNotas["ID ESCOLA"] = range(
+            1, len(dadosCorrigidosNotas) + 1
+        )  # noqa E501
 
         # Unpivot
         unpivotNotasGeral = pd.melt(
-            planilhaNotasGeral,
-            id_vars=planilhaNotasGeral.columns[0],
+            dadosCorrigidosNotas,
+            id_vars=["ESCOLA", "ID ESCOLA"],
             var_name="ANO",
             value_name="NOTA",
         )
         unpivotNotasMetas = pd.melt(
-            planilhaNotasMetas,
-            id_vars=planilhaNotasMetas.columns[0],
+            dadosCorrigidosMetas,
+            id_vars=["ESCOLA"],
             var_name="ANO",
             value_name="META",
         )
@@ -263,10 +290,6 @@ class DriveProcessor:
             on=["ESCOLA", "ANO"],
             how="left",  # noqa E501
         )
-
-        # Corrigindo tipo de dados
-        df["NOTA"] = df["NOTA"].str.replace(",", ".").astype(float)
-        df["META"] = df["META"].str.replace(",", ".").astype(float)
 
         # Substituir Valores Nulos restantes
         df.fillna(0, inplace=True)
