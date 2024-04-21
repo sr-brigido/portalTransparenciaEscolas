@@ -105,3 +105,14 @@ class UiPortalescolas:
             erro: Exibe em tela o erro disparado
         """
         return st.error(erro)
+
+    def switch(self, titulo: str):
+        """Cria um botão switch para realizar uma função.
+
+        Args:
+            titulo: Titulo do botão
+
+        Returns:
+            clicado: Retorna um Booleano quando clicado
+        """
+        return st.toggle(label=titulo)

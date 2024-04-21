@@ -71,13 +71,15 @@ def app():
         quantidadePorAno["QUANTIDADE POR ANO"],
         x="QUANTIDADE ESTUDANTES",
         y="ANO",
-        title="Quantidade de estudantes por ano",
+        title="Quantidade de estudantes por série",
         text="QUANTIDADE ESTUDANTES",
         orientation="h",
     ).update_layout(xaxis=dict(visible=False))
 
+    graficoEscolas.update_yaxes(title="SÉRIE", showticklabels=True)
+
     graficoEscolas.update_traces(
-        textfont=dict(size=20), marker=dict(color="orange")
+        textfont=dict(size=25), marker=dict(color="orange")
     )  # noqa E501
 
     plotly_chart(graficoEscolas, use_container_width=True)
@@ -88,6 +90,13 @@ def app():
     dfIdeb5 = dados.retornaPlanilhaIdebMacro(5)
     opcoesSelecaoPolo = dfIdeb5["ESCOLA"].unique()
     opcoesSelecaoAno = dfIdeb5["ANO"].unique()
+
+    cores = {
+        "META": "#FF5733",
+        "NOTA": "#ffa500",
+        "Percentual": "#3366FF",
+        "ATINGIMENTO": "#ffa500",
+    }
 
     def filtraAnoDF(df: pd.DataFrame, ano: str) -> pd.DataFrame:
         """Filtra o Dataframe para o Ano selecionado.
@@ -115,7 +124,11 @@ def app():
         """
         return df[df["ESCOLA"].isin(colunas)]
 
-    col1, col2 = columns([1, 7])
+    col1, col2 = columns([2, 8])
+
+    for i in range(2):
+        col1.write("")
+
     anoSelecionado = col1.selectbox(
         label="Selecione o ano de análise:",
         options=opcoesSelecaoAno,
@@ -137,13 +150,65 @@ def app():
             x="ESCOLA",
             y=["NOTA", "META"],
             barmode="group",
-            title=f"Média nota IDEB Geral em {anoSelecionado}",
+            title=f"Média geral IDEB em {anoSelecionado}",
+            color_discrete_map=cores,
         )
+
+        graficoGeralIdeb.update_xaxes(title="", showticklabels=True)
+        graficoGeralIdeb.update_yaxes(title="", showticklabels=True)
+        graficoGeralIdeb.update_layout(legend_title_text="")
 
         col2.plotly_chart(graficoGeralIdeb, use_container_width=True)
 
     else:
         col2.error("Selecione ao menos 1 polo para exibir o gráfico!")
+
+    # Gráfico geral escolas por ano
+    dfIdeb5Micro = filtraAnoDF(
+        dados.retornaPlanilhaIdebMicro(5), anoSelecionado
+    )  # noqa E501
+
+    for i in range(11):
+        col1.write("")
+
+    ordem = not col1.toggle("Ordem Ascendente")
+    dfOrdenado = dfIdeb5Micro.sort_values(by="ATINGIMENTO", ascending=ordem)
+
+    graficoMicroIdeb = px.bar(
+        dfOrdenado,
+        x="ATINGIMENTO",
+        y="ESCOLA",
+        title=f"Desempenho IDEB das escolas em {anoSelecionado}",
+        orientation="h",
+    ).update_layout(height=600)
+
+    graficoMicroIdeb.update_yaxes(title="", showticklabels=True)
+    graficoMicroIdeb.update_traces(
+        marker_color=[
+            "red" if pontuacao < 1 else "green"
+            for pontuacao in dfOrdenado["ATINGIMENTO"]
+        ]
+    )
+
+    # Adicionar linha constante no eixo x
+    graficoMicroIdeb.add_shape(
+        type="line",
+        x0=1,
+        y0=-0.5,
+        x1=1,
+        y1=len(dfIdeb5Micro) - 0.5,
+        line=dict(color="#ffa500", width=2),
+    )
+    graficoMicroIdeb.add_annotation(
+        x=1,
+        y=len(dfIdeb5Micro) + 0.85,
+        text="OBJETIVO",
+        showarrow=False,
+        font=dict(size=12, color="orange"),
+        xshift=25,
+    )
+
+    plotly_chart(graficoMicroIdeb, use_container_width=True)
 
     interface.markdown("## Desempenho IDEB 9° ano")
 
