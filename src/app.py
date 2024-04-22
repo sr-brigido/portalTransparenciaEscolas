@@ -84,19 +84,20 @@ def app():
 
     plotly_chart(graficoEscolas, use_container_width=True)
 
-    interface.markdown("## Desempenho IDEB 5° ano")
+    divider()
+
+    interface.markdown("## Desempenho IDEB das escolas municipais de Crciúma")
+    serieIdeb = interface.seletor(
+        "Selecione a Série para realizar sua análise:", ["5° ano", "9° ano"]
+    )
+    serieIdebNumero = int(serieIdeb[0])
 
     # Importa o Dataframe
-    dfIdeb5 = dados.retornaPlanilhaIdebMacro(5)
-    opcoesSelecaoPolo = dfIdeb5["ESCOLA"].unique()
-    opcoesSelecaoAno = dfIdeb5["ANO"].unique()
+    dfMAcro = dados.retornaPlanilhaIdebMacro(serieIdebNumero)
+    opcoesSelecaoPolo = dfMAcro["ESCOLA"].unique()
+    opcoesSelecaoAno = dfMAcro["ANO"].unique()
 
-    cores = {
-        "META": "#FF5733",
-        "NOTA": "#ffa500",
-        "Percentual": "#3366FF",
-        "ATINGIMENTO": "#ffa500",
-    }
+    cores = {"META": "#FF5733", "NOTA": "#ffa500"}
 
     def filtraAnoDF(df: pd.DataFrame, ano: str) -> pd.DataFrame:
         """Filtra o Dataframe para o Ano selecionado.
@@ -141,7 +142,7 @@ def app():
     )
 
     dfGeralFiltrado = selecionaColunasDF(
-        filtraAnoDF(dfIdeb5, anoSelecionado), nivelSelecionado
+        filtraAnoDF(dfMAcro, anoSelecionado), nivelSelecionado
     )
 
     if not dfGeralFiltrado.empty:
@@ -150,7 +151,7 @@ def app():
             x="ESCOLA",
             y=["NOTA", "META"],
             barmode="group",
-            title=f"Média geral IDEB em {anoSelecionado}",
+            title=f"Média geral IDEB do {serieIdeb} em {anoSelecionado}",
             color_discrete_map=cores,
         )
 
@@ -164,21 +165,29 @@ def app():
         col2.error("Selecione ao menos 1 polo para exibir o gráfico!")
 
     # Gráfico geral escolas por ano
-    dfIdeb5Micro = filtraAnoDF(
-        dados.retornaPlanilhaIdebMicro(5), anoSelecionado
+    dfMicro = dados.retornaPlanilhaIdebMicro(serieIdebNumero)
+    escolasMicro = dfMicro["ESCOLA"].unique()
+
+    dfIdebMicro = filtraAnoDF(dfMicro, anoSelecionado)  # noqa E501
+
+    escolasAcimaAtingimento = len(
+        dfIdebMicro[dfIdebMicro["ATINGIU META"] == "SIM"]
+    )  # noqa E501
+    escolasAbaixoAtingimento = len(
+        dfIdebMicro[dfIdebMicro["ATINGIU META"] != "SIM"]
     )  # noqa E501
 
     for i in range(11):
         col1.write("")
 
     ordem = not col1.toggle("Ordem Ascendente")
-    dfOrdenado = dfIdeb5Micro.sort_values(by="ATINGIMENTO", ascending=ordem)
+    dfOrdenado = dfIdebMicro.sort_values(by="ATINGIMENTO", ascending=ordem)
 
     graficoMicroIdeb = px.bar(
         dfOrdenado,
         x="ATINGIMENTO",
         y="ESCOLA",
-        title=f"Desempenho IDEB das escolas em {anoSelecionado}",
+        title=f"Atingimento do IDEB do {serieIdeb} pelas escolas em {anoSelecionado}",  # noqa E501
         orientation="h",
     ).update_layout(height=600)
 
@@ -196,21 +205,47 @@ def app():
         x0=1,
         y0=-0.5,
         x1=1,
-        y1=len(dfIdeb5Micro) - 0.5,
+        y1=len(dfIdebMicro) - 0.5,
         line=dict(color="#ffa500", width=2),
     )
     graficoMicroIdeb.add_annotation(
         x=1,
-        y=len(dfIdeb5Micro) + 0.85,
+        y=len(dfIdebMicro) + 0.85,
         text="OBJETIVO",
         showarrow=False,
         font=dict(size=12, color="orange"),
         xshift=25,
     )
 
-    plotly_chart(graficoMicroIdeb, use_container_width=True)
+    col1, col2 = columns([8, 2])
+    col1.plotly_chart(graficoMicroIdeb, use_container_width=True)
 
-    interface.markdown("## Desempenho IDEB 9° ano")
+    for i in range(14):
+        col2.write("")
+
+    col2.metric("ESCOLAS ACIMA DA META", escolasAcimaAtingimento)
+    col2.metric("ESCOLAS ABAIXO DA META", escolasAbaixoAtingimento)
+
+    interface.markdown("#### Evolução do IDEB Individual")
+    escolaSelecionada = interface.seletor(
+        "Selecione a escola para análise:", escolasMicro
+    )
+    dfMicroFiltrado = dfMicro[dfMicro["ESCOLA"] == escolaSelecionada]
+
+    graficoEvolucaoIdeb = px.bar(
+        dfMicroFiltrado,
+        x="ANO",
+        y=["NOTA", "META"],
+        barmode="group",
+        title=f"Evolução nota IDEB do {serieIdeb} para {escolaSelecionada}",
+        color_discrete_map=cores,
+    )
+
+    graficoEvolucaoIdeb.update_xaxes(title="", showticklabels=True)
+    graficoEvolucaoIdeb.update_yaxes(title="NOTA", showticklabels=True)
+    graficoEvolucaoIdeb.update_layout(legend_title_text="")
+
+    plotly_chart(graficoEvolucaoIdeb, use_container_width=True)
 
 
 if __name__ == "__main__":
